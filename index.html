@@ -2,285 +2,370 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Zoom-Dependent US States/Counties Map</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>US States & Counties Vulnerability Map with Enhanced Features</title>
 
-  <!-- Leaflet CSS & JS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-        crossorigin="" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-          crossorigin=""></script>
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
-    html, body { height: 100%; margin: 0; }
-    #map { width: 100%; height: 100%; }
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
     .info {
       padding: 6px 8px;
-      font: 14px/16px Arial, Helvetica, sans-serif;
-      background: rgba(255,255,255,0.8);
+      background: white;
+      border-radius: 4px;
       box-shadow: 0 0 15px rgba(0,0,0,0.2);
-      border-radius: 5px;
+      font: 14px/16px Arial, sans-serif;
     }
-    .info h4 { margin: 0 0 5px; color: #777; }
+    .info h4 {
+      margin: 0 0 4px;
+      color: #333;
+    }
+    #chartContainer {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 320px;
+      height: 200px;
+      background: white;
+      border-radius: 6px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      padding: 8px;
+      display: none;
+      z-index: 1000;
+    }
+    #chartCanvas {
+      width: 100%;
+      height: 100%;
+    }
     .legend {
       line-height: 18px;
       color: #555;
-      background: rgba(255,255,255,0.8);
+      background: white;
       padding: 6px 8px;
       border-radius: 5px;
       box-shadow: 0 0 15px rgba(0,0,0,0.2);
     }
     .legend i {
-      width: 18px; height: 18px; float: left;
-      margin-right: 8px; opacity: 0.7;
+      width: 18px;
+      height: 18px;
+      float: left;
+      margin-right: 8px;
+      opacity: 0.8;
     }
-    .zoom-indicator {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(255,255,255,0.8);
-      padding: 5px 10px;
-      border-radius: 3px;
-      font: 12px Arial, sans-serif;
-      z-index: 1000;
+    .legend h4 {
+      margin: 0 0 5px;
+      color: #777;
+    }
+    .leaflet-tooltip {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      pointer-events: none;
+      font-weight: bold;
     }
   </style>
 </head>
-
 <body>
   <div id="map"></div>
-  <div id="zoom-indicator" class="zoom-indicator">Loading...</div>
+  <div id="chartContainer">
+    <canvas id="chartCanvas"></canvas>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
 
   <script>
-    // Configuration
-    const ZOOM_THRESHOLD = 6; // Switch from states to counties at zoom level 6
-    
-    // Color scales
-    function getColorStates(d) {
-      return d > 1000 ? '#800026' :
-             d > 500  ? '#BD0026' :
-             d > 200  ? '#E31A1C' :
-             d > 100  ? '#FC4E2A' :
-             d > 50   ? '#FD8D3C' :
-             d > 20   ? '#FEB24C' :
-             d > 10   ? '#FED976' :
-                        '#FFEDA0';
-    }
-    
-    function getColorCounties(d) {
-      return d > 1000 ? '#084594' :
-             d > 500  ? '#2171b5' :
-             d > 200  ? '#4292c6' :
-             d > 100  ? '#6baed6' :
-             d > 50   ? '#9ecae1' :
-             d > 20   ? '#c6dbef' :
-             d > 10   ? '#deebf7' :
-                        '#f7fbff';
-    }
-
-    // Sample state density data
-    const stateDensities = {
-      "Alabama": 94.65, "Alaska": 1.264, "Arizona": 57.05, "Arkansas": 56.43, "California": 244.2,
-      "Colorado": 49.33, "Connecticut": 739.1, "Delaware": 464.3, "Florida": 353.4, "Georgia": 169.5,
-      "Hawaii": 214.1, "Idaho": 19.15, "Illinois": 231.1, "Indiana": 181.7, "Iowa": 54.81,
-      "Kansas": 35.09, "Kentucky": 110.0, "Louisiana": 105.0, "Maine": 43.04, "Maryland": 594.8,
-      "Massachusetts": 840.2, "Michigan": 174.8, "Minnesota": 67.14, "Mississippi": 63.50, "Missouri": 87.26,
-      "Montana": 6.858, "Nebraska": 23.97, "Nevada": 24.8, "New Hampshire": 147.0, "New Jersey": 1189,
-      "New Mexico": 17.16, "New York": 411.2, "North Carolina": 206.2, "North Dakota": 9.916, "Ohio": 282.3,
-      "Oklahoma": 55.22, "Oregon": 39.9, "Pennsylvania": 284.3, "Rhode Island": 1006, "South Carolina": 155.4,
-      "South Dakota": 10.86, "Tennessee": 153.9, "Texas": 98.07, "Utah": 34.3, "Vermont": 67.73,
-      "Virginia": 202.6, "Washington": 101.2, "West Virginia": 77.06, "Wisconsin": 105.2, "Wyoming": 5.851
-    };
-
-    // Styling functions
-    function styleStates(feature) {
-      const name = feature.properties.NAME || feature.properties.name;
-      const density = stateDensities[name] || 0;
-      feature.properties._displayValue = density;
-      return {
-        fillColor: getColorStates(density),
-        weight: 2,
-        opacity: 1,
-        color: 'white',
-        dashArray: '3',
-        fillOpacity: 0.7
-      };
-    }
-
-    function styleCounties(feature) {
-      const area = Number(feature.properties.CENSUSAREA) || 0;
-      feature.properties._displayValue = area;
-      return {
-        fillColor: getColorCounties(area),
-        weight: 0.5,
-        color: '#999',
-        fillOpacity: 0.7
-      };
-    }
-
-    // Initialize map
-    const map = L.map('map').setView([37.8, -96], 4);
-    
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // 1. Initialize map
+    const map = L.map('map').setView([39.8, -98.5], 4);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 18,
-      attribution: '&copy; OpenStreetMap contributors'
+      attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
-    // Info control
+    let statesLayer, countiesLayer, chart;
+
+    // 2. Info control - shows name and vi_mean
     const info = L.control();
-    info.onAdd = function () {
+    info.onAdd = function() {
       this._div = L.DomUtil.create('div', 'info');
-      this.update();
+    //   this._div.innerHTML = '<h4>Hover for details</h4>';
+      this._div.innerHTML = 'SEIV Map';
       return this._div;
     };
-    info.update = function (props, isState) {
-      const title = isState ? 'US State Density' : 'County Area';
-      const unit = isState ? ' people / mi<sup>2</sup>' : ' sq mi';
-      this._div.innerHTML = `<h4>${title}</h4>` +
-        (props ? 
-          `<b>${props.NAME || props.name}</b><br/>${props._displayValue}${unit}` 
-          : `Hover over a ${isState ? 'state' : 'county'}`);
+    // info.update = function(name, viMean) {
+    //   const viText = (viMean === undefined || viMean === null || isNaN(viMean))
+    //     ? 'N/A'
+    //     : viMean.toFixed(3);
+    //   this._div.innerHTML = name
+    //     ? `<h4>${name}</h4><b>VI Mean:</b> ${viText}`
+    //     : 'SEIV Map';
+    //     // : '<h4>Hover for details</h4>';
+    // };
+    info.update = function(name) {
+        this._div.innerHTML = `<h4>${name || 'SEIV Map'}</h4>`;
     };
     info.addTo(map);
 
-    // Legend
+    // 3. Legend control
     const legend = L.control({position: 'bottomright'});
-    legend.onAdd = function () {
-      this._div = L.DomUtil.create('div', 'legend');
-      this.update(true); // Start with states legend
-      return this._div;
-    };
-    legend.update = function (isState) {
-      const grades = [0,10,20,50,100,200,500,1000];
-      const getColor = isState ? getColorStates : getColorCounties;
-      let html = '';
-      for (let i = 0; i < grades.length; i++) {
-        html += `<i style="background:${getColor(grades[i] + 1)}"></i> ` +
-                grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '<br>' : '+');
-      }
-      this._div.innerHTML = html;
+    legend.onAdd = function() {
+      const div = L.DomUtil.create('div', 'legend');
+      div.innerHTML = '<h4>Vulnerability Index</h4>';
+      
+      const grades = [
+        // {range: '≤ 0.2', label: 'Very Low', color: '#006994'},
+        {range: '0.0 - 0.2', label: 'Very Low', color: '#006994'},
+        {range: '0.2 - 0.4', label: 'Low', color: '#87CEEB'},
+        {range: '0.4 - 0.6', label: 'Medium', color: '#808080'},
+        {range: '0.6 - 0.8', label: 'High', color: '#FFA500'},
+        {range: '0.8 - 1.0', label: 'Very High', color: '#FF0000'}
+      ];
+
+      grades.forEach(grade => {
+        div.innerHTML +=
+          '<i style="background:' + grade.color + '"></i> ' +
+          grade.label + ' (' + grade.range + ')<br>';
+      });
+
+      return div;
     };
     legend.addTo(map);
 
-    // Interaction functions
-    function highlightFeature(e, isState) {
+    // 4. Chart handling - horizontal bar chart with frequencies
+    function showChart(props) {
+      const container = document.getElementById('chartContainer');
+      container.style.display = 'block';
+
+      // Get raw counts
+      const counts = [
+        props.very_low || 0,
+        props.low || 0,
+        props.medium || 0,
+        props.high || 0,
+        props.very_high || 0
+      ];
+
+      // Calculate percentages
+      const total = counts.reduce((a, b) => a + b, 0);
+      const percentages = total
+        ? counts.map(count => (count / total * 100).toFixed(1))
+        : [0, 0, 0, 0, 0];
+
+      const ctx = document.getElementById('chartCanvas').getContext('2d');
+      if (chart) chart.destroy();
+
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Very Low', 'Low', 'Medium', 'High', 'Very High'],
+          datasets: [{
+            label: 'Percentage',
+            data: percentages,
+            backgroundColor: ['#006994', '#87CEEB', '#808080', '#FFA500', '#FF0000'],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          indexAxis: 'y', // Makes bars horizontal
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              beginAtZero: true,
+              max: 100,
+              title: { display: true, text: 'Percentage (%)' }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            title: {
+              display: true,
+            //   text: (props.NAME || 'Unknown') + ' - Distribution'
+              text: (props.NAME || 'Unknown')
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const index = context.dataIndex;
+                  const percentage = context.parsed.x;
+                  const frequency = counts[index];
+                  return `${percentage}% (${frequency} areas)`;
+                }
+              }
+            }
+          },
+          // Add data labels showing frequencies under percentages
+          onHover: function(event, activeElements) {
+            if (activeElements.length > 0) {
+              const index = activeElements[0].index;
+              const frequency = counts[index];
+              const percentage = percentages[index];
+              // You could add custom rendering here if needed
+            }
+          }
+        },
+        plugins: [{
+          afterDatasetsDraw: function(chart) {
+            const ctx = chart.ctx;
+            chart.data.datasets.forEach((dataset, i) => {
+              const meta = chart.getDatasetMeta(i);
+              meta.data.forEach((bar, index) => {
+                const data = percentages[index] + '%';
+                const frequency = '(' + counts[index] + ')';
+                
+                ctx.fillStyle = '#000';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                const x = bar.x + 20;
+                const y = bar.y - 5;
+                
+                ctx.fillText(data, x, y);
+                ctx.fillText(frequency, x, y + 12);
+              });
+            });
+          }
+        }]
+      });
+    }
+
+    function hideChart() {
+      document.getElementById('chartContainer').style.display = 'none';
+    }
+
+    // 5. Styling & interaction
+    function getColorCategory(v) {
+      if (v === undefined || v === null || isNaN(v)) return '#cccccc';
+      if (v <= 0.2) return '#006994';      // sea blue
+      if (v <= 0.4) return '#87CEEB';      // sky blue
+      if (v <= 0.6) return '#808080';      // grey
+      if (v <= 0.8) return '#FFA500';      // orange
+      return '#FF0000';                    // red
+    }
+
+    function styleFeature(f) {
+      return {
+        color: 'white',
+        weight: 1,
+        fillOpacity: 0.7,
+        fillColor: getColorCategory(f.properties.vi_mean)
+      };
+    }
+
+    function highlightFeature(e) {
       const layer = e.target;
-      layer.setStyle({
-        weight: isState ? 5 : 2,
-        color: '#666',
-        dashArray: '',
-        fillOpacity: 0.9
-      });
-      if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
-        layer.bringToFront();
-      }
-      info.update(layer.feature.properties, isState);
+      layer.setStyle({ weight: 3, color: '#666', fillOpacity: 0.9 });
+      if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) layer.bringToFront();
+      const p = layer.feature.properties;
+      info.update(p.NAME, p.vi_mean); // Show both name and vi_mean
+      showChart(p);
     }
 
-    function resetHighlight(e, currentLayer) {
-      currentLayer.resetStyle(e.target);
-      info.update(null, currentActiveLayer === statesLayer);
+    function resetHighlight(e) {
+      const layer = e.target;
+      if (statesLayer && statesLayer.hasLayer(layer)) statesLayer.resetStyle(layer);
+      if (countiesLayer && countiesLayer.hasLayer(layer)) countiesLayer.resetStyle(layer);
+      info.update();
+      hideChart();
     }
 
-    function zoomToFeature(e) {
-      map.fitBounds(e.target.getBounds());
-    }
+    function onClick(e) { /* Disabled click */ }
 
-    function onEachFeatureStates(feature, layer) {
+    // function onEachFeature(f, layer) {
+    //   layer.on({
+    //     mouseover: highlightFeature,
+    //     mouseout: resetHighlight,
+    //     click: onClick
+    //   });
+    //   layer.bindTooltip(f.properties.NAME);
+    // }
+
+    function onEachFeature(f, layer) {
       layer.on({
-        mouseover: (e) => highlightFeature(e, true),
-        mouseout: (e) => resetHighlight(e, statesLayer),
-        click: zoomToFeature
+        mouseover: highlightFeature,
+        mouseout: resetHighlight,
+        click: onClick
       });
-    }
-
-    function onEachFeatureCounties(feature, layer) {
-      layer.on({
-        mouseover: (e) => highlightFeature(e, false),
-        mouseout: (e) => resetHighlight(e, countiesLayer),
-        click: zoomToFeature
-      });
-    }
-
-    // Layer variables
-    let statesLayer = null;
-    let countiesLayer = null;
-    let currentActiveLayer = null;
-    let statesData = null;
-    let countiesData = null;
-
-    // Zoom indicator
-    const zoomIndicator = document.getElementById('zoom-indicator');
-
-    function updateZoomIndicator() {
-      const zoom = map.getZoom();
-      const layerType = zoom < ZOOM_THRESHOLD ? 'States' : 'Counties';
-      zoomIndicator.innerHTML = `Zoom: ${zoom} | Showing: ${layerType}`;
-    }
-
-    // Layer switching logic
-    function switchLayers() {
-      const currentZoom = map.getZoom();
-      updateZoomIndicator();
-      
-      if (currentZoom < ZOOM_THRESHOLD) {
-        // Show states
-        if (currentActiveLayer === countiesLayer && countiesLayer) {
-          map.removeLayer(countiesLayer);
-        }
-        if (statesData && !currentActiveLayer || currentActiveLayer === countiesLayer) {
-          if (statesLayer) map.removeLayer(statesLayer);
-          statesLayer = L.geoJson(statesData, {
-            style: styleStates,
-            onEachFeature: onEachFeatureStates
-          }).addTo(map);
-          currentActiveLayer = statesLayer;
-          info.update(null, true);
-          legend.update(true);
-        }
-      } else {
-        // Show counties
-        if (currentActiveLayer === statesLayer && statesLayer) {
-          map.removeLayer(statesLayer);
-        }
-        if (countiesData && (!currentActiveLayer || currentActiveLayer === statesLayer)) {
-          if (countiesLayer) map.removeLayer(countiesLayer);
-          countiesLayer = L.geoJson(countiesData, {
-            style: styleCounties,
-            onEachFeature: onEachFeatureCounties
-          }).addTo(map);
-          currentActiveLayer = countiesLayer;
-          info.update(null, false);
-          legend.update(false);
-        }
-      }
-    }
-
-    // Load data and set up zoom event
-    Promise.all([
-      fetch('us-states.json').then(r => r.json()),
-      fetch('us-counties.json').then(r => r.json())
-    ]).then(([states, counties]) => {
-      statesData = states;
-      countiesData = counties;
-      
-      // Initial layer setup
-      switchLayers();
-      
-      // Set up zoom event listener
-      map.on('zoomend', switchLayers);
-      
-      zoomIndicator.innerHTML = 'Ready! Zoom in/out to switch between states and counties';
-    }).catch(error => {
-      console.error('Error loading data:', error);
-      zoomIndicator.innerHTML = 'Error loading data. Check file paths.';
+      const vi = f.properties.vi_mean;
+    const viText = (vi === undefined || vi === null || isNaN(vi)) ? 'N/A' : vi.toFixed(3);
+    layer.bindTooltip(`${f.properties.NAME}<br>VI Mean: ${viText}`, {
+        sticky: true
     });
+      layer.bindPopup(`<strong>${f.properties.NAME}</strong><br>VI Mean: ${viText}`, {
+        closeButton: false,
+        autoClose: false,
+        className: 'leaflet-popup-info'
+      });
+    }
 
-    // Initial zoom indicator update
-    map.on('zoom', updateZoomIndicator);
-    updateZoomIndicator();
+    // 6. Zoom-based toggling
+    function toggleLayers() {
+      const z = map.getZoom();
+      if (statesLayer) {
+        if (z <= 5) {
+          if (!map.hasLayer(statesLayer)) map.addLayer(statesLayer);
+        } else {
+          if (map.hasLayer(statesLayer)) map.removeLayer(statesLayer);
+        }
+      }
+      if (countiesLayer) {
+        if (z > 5) {
+          if (!map.hasLayer(countiesLayer)) map.addLayer(countiesLayer);
+        } else {
+          if (map.hasLayer(countiesLayer)) map.removeLayer(countiesLayer);
+        }
+      }
+    }
+
+    // 7. Load GeoJSONs
+    fetch('us-states.json')
+      .then(r => r.json())
+      .then(js => {
+        statesLayer = L.geoJSON(js, { style: styleFeature, onEachFeature });
+        map.on('zoomend', toggleLayers);
+        toggleLayers();
+      })
+      .catch(err => console.error('Error loading states:', err));
+
+    fetch('us-counties.json')
+      .then(r => r.json())
+      .then(js => {
+        // Ensure vi_mean is present on counties
+        js.features.forEach(f => {
+          if (f.properties.vi_mean === undefined) {
+            const { very_low, low, medium, high, very_high } = f.properties;
+            const sum = (very_low || 0) + (low || 0) + (medium || 0) + (high || 0) + (very_high || 0);
+            f.properties.vi_mean = sum ? 
+              ((very_low || 0) * 0.1 + (low || 0) * 0.3 + (medium || 0) * 0.5 + (high || 0) * 0.7 + (very_high || 0) * 0.9) / sum : 0;
+          }
+        });
+        countiesLayer = L.geoJSON(js, { style: styleFeature, onEachFeature });
+        map.on('zoomend', toggleLayers);
+        toggleLayers();
+      })
+      .catch(err => console.error('Error loading counties:', err));
+
+    map.whenReady(toggleLayers);
   </script>
 </body>
 </html>
